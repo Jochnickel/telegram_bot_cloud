@@ -1,256 +1,374 @@
-from botocore.vendored import requests
+import os
+import time
+import TelegramApi
+import Buttons
+import FilesystemMySQL
 
-URL = "https://api.telegram.org/bot1057097448:AAEojH8infz-eemFpJTOBb8kwM-e-kSP-Po/"
-ADMIN = "452549370"
+RED_PIC = "https://raw.githubusercontent.com/Jochnickel/telegram_bot_cloud/main/delete.png"
+BG_PIC = "https://cdn.pixabay.com/photo/2020/07/19/13/18/sky-5420026__340.jpg"
+EMPTY_SKY = "https://cdn.pixabay.com/photo/2020/07/19/13/18/sky-5420026__340.jpg"
+DONATE = "Paypal: joachim.redmi@gmail.com"
+BOTS_ARCHIVE_LINK = "https://t.me/BotsArchive/1559"
+TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+
+msgAdmin = None  # To be injected
+errorAdmin = None  #
+
+api = TelegramApi.TelegramApi(TOKEN)
+fs = FilesystemMySQL.FilesystemMySQL()
 
 
-def errorAdmin():
-    requests.get(URL + 'sendMessage?chat_id=' + ADMIN +
-                 '&text=%s' % (str(traceback.format_exc())))
+def sendPhoto(updateMsg, tgUserId, photo, caption, button_array_array):
+    if updateMsg:
+        info = api.editMessageMedia(
+            chat_id=tgUserId,
+            mediaType='photo',
+            media=photo,
+            message_id=updateMsg,
+            button_array_array=button_array_array,
+            caption=caption)
+        
+        if info[0] or info[1].count('are exactly the same'):
+            return info
+        # editMedia on voice message
+        
+    info = api.sendPhoto(
+        chat_id=tgUserId,
+        photo=photo,
+        caption=caption,
+        button_array_array=button_array_array)
+        
+    if info[0] and updateMsg:
+        api.deleteMessage(tgUserId,updateMsg)
+        
+    return info
 
 
-def msgAdmin(text):
-    requests.get(URL + 'sendMessage?chat_id=' + ADMIN + '&text=' + str(text) +
-                 " ")
+def updateMessage(updateMsg, tgUserId):
+    fileId = fs.getCurrentFileId(tgUserId)
+    tgFileId, fileName = fs.getTelegramFileIdAndFileNameById(tgUserId, fileId)
+    fullPath = fs.getFullPath(tgUserId, fileId)
+    
+    if tgFileId:
+        #File
+        buttons = [[
+            Buttons.getBackButton(),
+            Buttons.getHomeButton(),
+            Buttons.getRenameButton(fileName),
+            Buttons.getDeleteButton(fileId)
+        ]]
+        if updateMsg:
+            # Single File, update Message
+            
+            for t in ['document', 'photo', 'audio','video', 'animation']:
+                info = api.editMessageMedia(
+                    chat_id=tgUserId,
+                    mediaType=t,
+                    media=tgFileId,
+                    message_id=updateMsg,
+                    button_array_array=buttons,
+                    caption=fullPath)
+                # msgAdmin("info")
+                # msgAdmin(info)
+                if info[0]:
+                    return info
+            
+            
+            # voice after else
+            info = api.sendVoice(
+                chat_id=tgUserId,
+                voice=tgFileId,
+                caption=fullPath,
+                button_array_array=[[Buttons.getDeleteButton(fileId)]])
+            if info[0]:
+                return info
+                
+            msgAdmin("Single File, update Message failed")
+        
+        # else:
+        # Single File, new Message
+        info = api.sendDocument(
+            chat_id=tgUserId,
+            document=tgFileId,
+            caption=fullPath,
+            button_array_array=buttons)
+        if info[0]:
+            return info
+        msgAdmin("Single File new Message failed")
+        
+    else:
+        #Folder
+        buttons = []
+        photo=BG_PIC
+        
+        folderContent = fs.getFolderContent(tgUserId, fileId)
 
+        # dont rewrite fileId, fileName!!!
+        for f_id, f_name, tg_f_id in folderContent:
+            buttons.append(
+                [Buttons.getButton(f_name, '/file ' + str(f_id))])
 
-try:
-    import json
-    import traceback
-    import urllib.parse
-
-    import FilesystemSQL
-
-    fs = FilesystemSQL.FilesystemSQL("/tmp/filesystem.db", msgAdmin)
-
-    requests.get(URL + 'sendMessage?chat_id=' + ADMIN + '&text=starting_bot')
-
-    def send_message(chat_id, text, parse_mode=""):
-        str_text = str(text)
-        query = urllib.parse.urlencode({
-            'chat_id': chat_id,
-            'text': str_text,
-            'parse_mode': parse_mode
-        })
-        requests.get(URL + "sendMessage?" + query)
-
-    def sendButtonMessage(chat_id,
-                          text,
-                          buttons=[[{
-                              "text": "a",
-                              "callback_data": "a"
-                          }, {
-                              "text": "b",
-                              "callback_data": "b"
-                          }]]):
-        str_text = str(text)
-        query = urllib.parse.urlencode({
-            'chat_id':
-            chat_id,
-            'text':
-            str_text,
-            'reply_markup':
-            json.dumps({
-                "inline_keyboard": buttons
-            })
-        })
-        requests.get(URL + "sendMessage?" + query)
-
-    def sendFile(tgUserId, tgFileId):
-        query = urllib.parse.urlencode({
-            'chat_id': tgUserId,
-            'document': tgFileId
-        })
-        requests.get(URL + "sendDocument?" + query)
-
-    def sendRootFolderMessage(tgUserId):
-        folder = fs.getFolderContent(tgUserId, None)
-        if folder:
-            send_message(tgUserId, str(folder))
+        if fileId:
+            #subfolder
+            if len(buttons) < 1:
+                buttons.append([Buttons.getDeleteButton(fileId)])
+                photo=EMPTY_SKY
+            
+            buttons.append([
+                Buttons.getUpButton(),
+                Buttons.getNewFolderButton(),
+                Buttons.getRenameButton(fileName),
+                Buttons.getHomeButton()
+            ])
         else:
-            send_message(
-                tgUserId,
-                "You have no Files or Folders.\nCreate a Folder with /newfolder FolderName or send me files."
-            )
+            #root folder
+            buttons.append([
+                Buttons.getHomeButton(),
+                Buttons.getNewFolderButton(),
+                Buttons.getDonateButton(),
+                Buttons.getBotlistButton()
+            ])
+            
+        
+        caption = ("Files in Folder %s:" % (fullPath, ))
+        return sendPhoto(
+            updateMsg,
+            tgUserId=tgUserId,
+            photo=photo,
+            caption=caption,
+            button_array_array=buttons)
 
-    def sendFolderInfo(tgUserId, folderId):
-        try:
-            folderContent = fs.getFolderContent(tgUserId, folderId)
-            buttons = folderId and [[{
-                "text": "⬆️ Up",
-                "callback_data": "/cd_dot_dot"
-            }]] or [[]]
-            buttons[0].extend([{
-                "text": "🏠 Home",
-                "callback_data": "/cd_root"
-            }, {
-                "text": "🗂 New",
-                "switch_inline_query_current_chat": "/newfolder New_Folder"
-            }, {
-                "text": "❌ Delete",
-                "callback_data": "/delete " + str(folderId)
-            }])
-            # msgAdmin("folderContent "+str(folderContent))
-            for folder_info in folderContent:
-                # msgAdmin("folder_info "+str(folderContent))
-                fileId = folder_info[1]
-                fileName = folder_info[2]
-                buttons.append([{
-                    "text": fileName,
-                    "callback_data": "/cd " + str(fileId)
-                }])
-            sendButtonMessage(tgUserId, "Files in %s :"%(fs.getFullPath(tgUserId, folderId)), buttons)
-        except:
-            errorAdmin()
-            send_message(tgUserId, "Folder not found")
+# api.setMyCommands
 
-    def sendFileInfo(tgUserId, file_id):
+def handleBotCommand(updateMsg, tgUserId, cmd, halfString=None):
+    cmd = cmd.split()[0]
+    halfString = str(halfString).strip()
+    if "/ls" == cmd:
+        if halfString:
+            fs.setCurrentFolder(tgUserId, halfString)
+        return updateMessage(updateMsg, tgUserId)
+    elif "/_f" == cmd:
+        dump = fs._dumpFile(tgUserId, halfString)
+        api.sendMessage(tgUserId, dump)
+    elif "/_announce" == cmd:
+        pass
+        # allUsers = fs._getAllUsers(tgUserId)
+        # for u in allUsers:
+        #     api.sendMessage(u[0], halfString)
+    elif "/_u" == cmd:
+        dump = fs.dumpUser(halfString)
+        api.sendMessage(tgUserId, dump)
+    elif "/_delete_file" == cmd:
+        fs._deleteFile(tgUserId, halfString)
+        return updateMessage(updateMsg, tgUserId)
+    elif "/_moveHome" == cmd:
+        fs._moveHome(tgUserId, halfString)
+        return updateMessage(updateMsg, tgUserId)
+    elif "/_premium" == cmd:
+        fs._makePremium(tgUserId, halfString)
+        api.sendMessage(tgUserId, "made %s promium"%halfString)
+    elif "/_unpremium" == cmd:
+        fs._makePremium(tgUserId, halfString, False)
+        api.sendMessage(tgUserId, "removed %s promium"%halfString)
+    elif "/dump" == cmd:
+        dump = fs.dumpUser(tgUserId)
+        api.sendMessage(tgUserId, dump)
+    elif "/f" == cmd:
+        fileId = fs.getCurrentFileId(tgUserId)
+        api.sendMessage(tgUserId, fileId)
+    elif "/id" == cmd:
+        api.sendMessage(tgUserId, tgUserId)
+    elif "/tf" == cmd:
+        fileId = fs.getCurrentFileId(tgUserId)
+        tgFileId = fs.getTelegramFileId(tgUserId,fileId)
+        api.sendMessage(tgUserId, tgFileId)
+    elif "/clean" == cmd:
+        messy = fs.cleanAbandonedFiles()
+        api.sendMessage(tgUserId, messy)
+    elif "/getFile" == cmd:
+        fileInfo = api.getFile(halfString)
+        api.sendMessage(tgUserId, fileInfo)
+    elif "/stats" == cmd:
+        stats = fs.getStats()
+        api.sendMessage(tgUserId, "Users: %s, Total Files: %s"%stats)
+    elif "/donate" == cmd:
+        api.sendMessage(tgUserId, DONATE)
+    elif "/delete" == cmd:
+        fileId = halfString
+        fileName = fs.getFileNameById(tgUserId, fileId)
+        info = sendPhoto(
+            updateMsg=updateMsg,
+            tgUserId=tgUserId,
+            photo=RED_PIC,
+            caption=("Do you really want to delete %s?" % fileName),
+            button_array_array=[[
+                Buttons.getDeleteYesButton(fileId),
+                Buttons.getNoButton()
+            ]])
+        if not info[0]:
+            msgAdmin("sendPhoto failed")
+            msgAdmin(info)
+        return info
+    elif "/delete_yes" == cmd:
+        fs.moveUp(tgUserId)
+        fs.deleteFile(tgUserId, halfString)
+        return updateMessage(updateMsg, tgUserId)
+    elif "/cd_dot_dot" == cmd:
+        fs.moveUp(tgUserId)
+        return updateMessage(updateMsg, tgUserId)
+    elif "/cd_root" == cmd:
+        fs.setCurrentFolder(tgUserId, None)
+        return updateMessage(updateMsg, tgUserId)
+    elif "/file" == cmd:
+        fs.setCurrentFolder(tgUserId, halfString)
+        return updateMessage(updateMsg, tgUserId)
+    elif "/newfolder" == cmd:
+        folderId = fs.getCurrentFolderId(tgUserId)
+        fs.createFolder(tgUserId, halfString, folderId)
+        return updateMessage(updateMsg, tgUserId)
+    elif "/start" == cmd:
+        fs.addUser(tgUserId)
+        fs.setCurrentFolder(tgUserId, None)
+        return updateMessage(updateMsg, tgUserId)
+    elif "/rename" == cmd:
+        fileId = fs.getCurrentFileId(tgUserId)
+        fs.renameFile(tgUserId, fileId, halfString)
+        updateMessage(updateMsg, tgUserId)
+    elif "/reset" == cmd:
+        return sendPhoto(
+            updateMsg=updateMsg,
+            tgUserId=tgUserId,
+            photo=RED_PIC,
+            caption=("Do you really want to delete all your files?"),
+            button_array_array=[[
+                Buttons.getResetYesButton(),
+                Buttons.getNoButton()
+            ]])
+    elif "/reset_yes" == cmd:
+        fs.resetUser(tgUserId)
+        return updateMessage(updateMsg, tgUserId)
+    elif "/botlist" == cmd:
+        api.sendMessage(tgUserId, BOTS_ARCHIVE_LINK)
+    else:
+        msgAdmin("else")
+        msgAdmin(cmd)
+        return (None, None, None)
 
-        tgFileId = fs.getTelegramFileId(tgUserId, file_id)
-        if tgFileId:
-            buttons = [[{
-                "text": "Download",
-                "callback_data": "/download " + str(tgFileId)
-            }, {
-                "text": "Delete",
-                "callback_data": "/delete " + str(tgFileId)
-            }]]
-            sendButtonMessage(tgUserId, "File " + str(tgFileId), buttons)
-        else:
-            sendFolderInfo(tgUserId, file_id)
 
-    def sendCurretFileInfo(tgUserId):
-        currentId = fs.getCurrentFolderId(tgUserId)
-        sendFileInfo(tgUserId, currentId)
+def searchFileNames(chat_id, string):
+    rows = fs.searchFileByName(chat_id, string)
+    for row in rows:
+        fullPath = fs.getFullPath(chat_id, row[0])
+        api.sendMessage(chat_id, "Found %s"%(fullPath,))
 
-    def handleMessage(message):
-        if 'chat' in message and 'document' in message:
-            chat_id = message['chat']['id']
-            tg_file_id = message['document']['file_id']
-            origin_filename = message['document']['file_name']
-            origin_ending = origin_filename.count(
-                ".") and origin_filename.split(".")[-1] or ""
-            user_filename = 'caption' in message and message['caption'] or None
-            user_full_filename = user_filename and (
-                user_filename.count(".") and user_filename
-                or user_filename + origin_ending) or None
 
-            fs.insertFile(chat_id, (user_full_filename or origin_filename),
-                          tg_file_id, fs.getCurrentFolderId(chat_id))
-            sendCurretFileInfo(chat_id)
-
-        elif 'chat' in message and 'text' in message:
-            chat_id = message['chat']['id']
+def getCmdsInMessage(message):
+    if not 'entities' in message:
+        return None
+    entities = message['entities']
+    cmds = []
+    for e in entities:
+        if 'bot_command' == e['type']:
             text = message['text']
-            if "@"==text[0]:
-                #remove @botname from "@botname /something asd"
-                text = text[text.find(" ")+1:]
-            if '/start' == text[0:6]:
-                fs.setCurrentFolder(chat_id, None)
-            elif '/debug' == text[0:6]:
-                send_message(chat_id, fs.debugUser(chat_id))
-            elif '/reset' == text[0:6]:
-                confirm = text[6:]
-                if 'yes' == confirm:
-                    fs.resetUser(chat_id)
-                else:
-                    sendButtonMessage(
-                        chat_id, "Are you sure to delete all your files?",
-                        [[{
-                            "text": "Yes",
-                            "callback_data": "/reset_yes"
-                        }, {
-                            "text": "No",
-                            "callback_data": "/reset_no"
-                        }]])
-            elif '/cd' == text[0:3]:
-                folderId = text[3:].strip()
-                fs.setCurrentFolder(chat_id, folderId)
-            elif '/ls' == text[0:3]:
-                folderId = text[3:].strip() or fs.getCurrentFolderId(chat_id)
-            elif '/file' == text[0:5]:
-                fileId = text[5:].strip()
-                if fileId:
-                    try:
-                        sendFileInfo(chat_id, fileId)
-                    except:
-                        send_message(chat_id, "File / Folder not found")
-                else:
-                    send_message(chat_id, "Please provide a file ID")
-            elif '/newfolder' == text[0:10]:
-                folderName = text[10:].strip()
-                currentFolder = fs.getCurrentFolderId(chat_id)
-                existingFolder = fs.getFileIdByName(chat_id, folderName, currentFolder)
-                if existingFolder:
-                    send_message(chat_id,"Folder already exists")
-                elif folderName:
-                    fs.createFolder(chat_id, str(folderName), currentFolder)
-                else:
-                    send_message(chat_id,
-                                 "Please provide a name after /newfolder")
-            else:
-                send_message(chat_id, "You said: " + text)
-            sendCurretFileInfo(chat_id)
+            offset = e['offset']
+            length = e['length']
+            cmd = text[offset:offset + length]
+            halfString = text[offset + length:]
+            cmds.append((cmd, halfString))
+    return cmds
 
-    def handleCallbackQuery(callback_query):
-        if 'from' in callback_query and 'data' in callback_query:
-            from_chat = callback_query['from']
-            data = callback_query['data']
-            if 'id' in from_chat:
-                from_chat_id = from_chat['id']
-                if '/reset_yes' == data:
-                    fs.resetUser(from_chat_id)
-                elif '/cd_dot_dot' == data:
-                    fs.moveUp(from_chat_id)
-                elif '/cd_root' == data:
-                    fs.setCurrentFolder(from_chat_id, None)
-                elif '/cd' == data[:3]:
-                    moveToId = data[3:].strip()
-                    fs.setCurrentFolder(from_chat_id, moveToId)
-                elif '/download' == data[:9]:
-                    downloadId = data[9:].strip()
-                    sendFile(from_chat_id, downloadId)
-                elif '/delete_yes' == data[:11]:
-                    fileId = data[11:].strip()
-                    if fileId:
-                        folderContent = fs.getFolderContent(from_chat_id, fileId)
-                        if folderContent:
-                            send_message(
-                                from_chat_id,
-                                "Cant delete folder containing files: ")
-                        else:
-                            fs.moveUp(from_chat_id)
-                            fs.deleteFile(from_chat_id, fileId)
-                elif '/delete' == data[:7]:
-                    fileId = data[7:].strip()
-                    sendButtonMessage(
-                        from_chat_id, "Delete?",
-                        [[{
-                            "text": "Yes",
-                            "callback_data": "/delete_yes " + str(fileId)
-                        }, {
-                            "text": "No",
-                            "callback_data": "/delete_no"
-                        }]])
-                sendCurretFileInfo(from_chat_id)
+# Buttons (only?)
+def handleCallbackQuery(callback_query):
+    if 'data' in callback_query and 'message' in callback_query:
+        callback_query_id = callback_query['id']
 
-    def lambda_handler(event, context):
-        try:
-            if 'body' in event:
-                body = json.loads(event['body'])
-               # send_message('452549370',json.dumps(body, sort_keys=True, indent=4))
+        message = callback_query['message']
+        message_id = message['message_id']
+        chat = message['chat']
+        chat_id = chat['id']
+        data = callback_query['data'].strip()
+        
+        fs.setUserMessageId(chat_id, message_id)
 
-                if 'callback_query' in body:
-                    callback_query = body['callback_query']
-                    handleCallbackQuery(callback_query)
+        cmd = data.split()[0]
+        stringHalf = data[len(cmd):]
+        handleBotCommand(message_id, chat_id, cmd, stringHalf)
+    
+    else:
+        
+        msgAdmin("No data and message in callback_query")
 
-                if 'message' in body:
-                    message = body['message']
-                    handleMessage(message)
+    api.answerCallbackQuery(callback_query_id)
 
-            return {'statusCode': 200}
-        except:
-            errorAdmin()
 
-except:
-    errorAdmin()
+def handleMessage(message):
+    #Non Optional Values
+    chat = message['chat']
+    message_id = message['message_id']
+    chat_id = chat['id']
+    
+    # msgAdmin("message")
+    
+    if 'document' in message:
+        document = message['document']
+        fileName = document['file_name']
+        fileId = document['file_id']
+        # caption
+        currentFolder = fs.getCurrentFolderId(chat_id)
+        
+        fs.insertFile(chat_id, fileName, fileId, currentFolder)
+        api.deleteMessage(chat_id, message_id)
+        updateMessage(None, chat_id)
+        
+    elif 'photo' in message:
+        photo = message['photo']
+        timestamp = str(time.ctime())
+        fileId = photo.pop()['file_id']
+        currentFolder = fs.getCurrentFolderId(chat_id)
+        
+        fs.insertFile(chat_id, '🖼'+timestamp, fileId, currentFolder)
+        api.deleteMessage(chat_id, message_id)
+        updateMessage(None, chat_id)
+        
+    elif 'audio' in message:
+        audio = message['audio']
+        fileId = audio['file_id']
+        title = 'title' in audio and audio['title'] or 'Audiofile'
+        currentFolder = fs.getCurrentFolderId(chat_id)
+        
+        fs.insertFile(chat_id, '🎵'+title, fileId, currentFolder)
+        api.deleteMessage(chat_id, message_id)
+        updateMessage(None, chat_id)
+        
+    elif 'voice' in message:
+        voice = message['voice']
+        fileId = voice['file_id']
+        date = message['date']
+        title = '🎙Voicemessage'+str(date)
+        currentFolder = fs.getCurrentFolderId(chat_id)
+        
+        fs.insertFile(chat_id, title, fileId, currentFolder)
+        api.deleteMessage(chat_id, message_id)
+        updateMessage(None, chat_id)
+        
+    elif 'text' in message:
+        text = message['text']
+        if '@' == text[0]:
+            text = text[text.find(" ") + 1]
+
+        bot_commands = getCmdsInMessage(message)
+
+        if bot_commands:
+            for cmd, halfString in bot_commands:
+                info = handleBotCommand(None, chat_id, cmd, halfString)
+                if info:
+                    if info[0]:
+                        api.deleteMessage(chat_id, message_id)
+                        oldMsgId = fs.getUserMessageId(chat_id)
+                        if oldMsgId:
+                            api.deleteMessage(chat_id, oldMsgId)
+                    else:
+                        msgAdmin("api.send? error")
+                        msgAdmin(info)
+        else:
+            results = searchFileNames(chat_id, text)
