@@ -18,5 +18,4 @@ phases:
       - echo Build completed on `date`
 artifacts:
   files:
-    - bundle.zip
     - appspec.yml
