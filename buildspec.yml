@@ -4,6 +4,7 @@ phases:
   install:
     runtime-versions:
       nodejs: 12.x
+      python: 3.8
   pre_build:
     commands:
       - echo Nothing to do in the pre_build phase...
