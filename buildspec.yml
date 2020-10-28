@@ -12,7 +12,7 @@ phases:
     commands:
       - echo Build started on `date`
       - pip3 install -U pymysql requests
-      - zip bundle.zip *
+      - zip -r bundle.zip .
   post_build:
     commands:
       - echo Build completed on `date`
