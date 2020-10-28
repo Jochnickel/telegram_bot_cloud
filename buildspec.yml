@@ -11,9 +11,10 @@ phases:
     commands:
       - echo Build started on `date`
       - pip3 install -U pymysql requests
+      - zip bundle.zip *
   post_build:
     commands:
       - echo Build completed on `date`
 artifacts:
   files:
-    - WTF_TELEGRAM.png
+    - bundle.zip
