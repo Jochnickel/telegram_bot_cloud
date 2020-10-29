@@ -3,7 +3,7 @@ version: 0.2
 phases:
   build:
     commands:
-      - CurrentVersion=$(echo $(aws lambda get-alias --function-name $LAMBDA_FUNCTION_NAME --name $LAMBDA_FUNCTION_AlIAS | grep FunctionVersion | tail -1 |tr -cd "[0-9]"))
+      - CurrentVersion=$(echo $(aws lambda get-alias --function-name $LAMBDA_FUNCTION_NAME --name $LAMBDA_FUNCTION_ALIAS | grep FunctionVersion | tail -1 |tr -cd "[0-9]"))
   post_build:
     commands:
       - ls
@@ -14,7 +14,7 @@ phases:
       - sed -i -e "s/{{CurrentVersion}}/$CurrentVersion/g" appspec.yml
       - sed -i -e "s/{{TargetVersion}}/$TargetVersion/g" appspec.yml
       - sed -i -e "s/{{LAMBDA_FUNCTION_NAME}}/$LAMBDA_FUNCTION_NAME/g" appspec.yml
-      - sed -i -e "s/{{LAMBDA_FUNCTION_AlIAS}}/$LAMBDA_FUNCTION_AlIAS/g" appspec.yml
+      - sed -i -e "s/{{LAMBDA_FUNCTION_ALIAS}}/$LAMBDA_FUNCTION_AlIAS/g" appspec.yml
 
 artifacts:
   files:
