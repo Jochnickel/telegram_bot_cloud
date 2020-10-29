@@ -1,21 +1,21 @@
 version: 0.2
 
 phases:
-  install:
-    runtime-versions:
-      nodejs: 12.x
-      python: 3.8
-  pre_build:
-    commands:
-      - echo Nothing to do in the pre_build phase...
   build:
     commands:
-      - echo Build started on `date`
-      - pip3 install pymysql requests -t .
-      - zip -r bundle.zip .
+      - CurrentVersion=$(echo $(aws lambda get-alias --function-name $LAMBDA_FUNCTION_NAME --name $LAMBDA_FUNCTION_AlIAS | grep FunctionVersion | tail -1 |tr -cd "[0-9]"))
   post_build:
     commands:
-      - echo Build completed on `date`
+      - ls
+      - aws lambda publish-version --function-name $LAMBDA_FUNCTION_NAME
+      - TargetVersion=$(echo $(aws lambda list-versions-by-function --function-name $LAMBDA_FUNCTION_NAME | grep Version | tail -1 | tr -cd "[0-9]"))
+      - echo $CurrentVersion
+      - echo $TargetVersion
+      - sed -i -e "s/{{CurrentVersion}}/$CurrentVersion/g" appspec.yml
+      - sed -i -e "s/{{TargetVersion}}/$TargetVersion/g" appspec.yml
+      - sed -i -e "s/{{LAMBDA_FUNCTION_NAME}}/$LAMBDA_FUNCTION_NAME/g" appspec.yml
+      - sed -i -e "s/{{LAMBDA_FUNCTION_AlIAS}}/$LAMBDA_FUNCTION_AlIAS/g" appspec.yml
+
 artifacts:
   files:
-    - "*"
+    - "**/*"
