@@ -4,6 +4,6 @@ Resources:
       Type: AWS::Lambda::Function
       Properties:
         Name: "{{LAMBDA_FUNCTION_NAME}}"
-        Alias: "{{LAMBDA_FUNCTION_AlIAS}}"
+        Alias: "{{LAMBDA_FUNCTION_ALIAS}}"
         CurrentVersion: "{{CurrentVersion}}"
         TargetVersion: "{{TargetVersion}}"
